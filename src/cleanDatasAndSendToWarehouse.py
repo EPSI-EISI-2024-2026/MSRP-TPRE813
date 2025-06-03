@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import pandas as pd
 from io import BytesIO
+import unicodedata
 
 # Load environment variables from .env file
 load_dotenv()
@@ -12,6 +13,8 @@ BUCKET_NAME = os.environ["MINIO_BUCKET"]
 
 # Connect to MinIO
 client = get_minio_client()
+# Connect to Postgres
+engine = get_postgres_engine()
 
 def loadFile(filename):
     """
@@ -24,23 +27,21 @@ def loadFile(filename):
         print(f"Error loading file {filename}: {e}")
         return None
 
-def fileToDF(file, type: str):
-    """
-    Convert a file to a DataFrame.
-    """
-    if type == "xlsx":
-        return pd.read_excel(BytesIO(file))
-    elif type == "csv":
-        return pd.read_csv(file)
-    else:
-        raise ValueError("Unsupported file type")
+def remove_accents_df(df):
+    def strip_accents(s):
+        if isinstance(s, str):
+            return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+        return s
+    return df.applymap(strip_accents)
 
 def clean_and_rename_columns(df):
-    # Rename main columns except the first candidate columns
+    # Drop the Etat saisie column
+    df = df.drop(columns=['Etat saisie'])
+
+    # Rename main columns to English
     rename_map = {
-        'Code du département': 'departement_code',
-        'Libellé du département': 'departement_name',
-        'Etat saisie': 'entry_status',
+        'Code du département': 'department_code',
+        'Libellé du département': 'department_name',
         'Inscrits': 'registered',
         'Abstentions': 'abstentions',
         '% Abs/Ins': 'pct_abstention',
@@ -62,8 +63,8 @@ def clean_and_rename_columns(df):
         'Sexe', 'Nom', 'Prénom', 'Voix', '% Voix/Ins', '% Voix/Exp'
     ]
     normalized_fields = [
-        'sexe_candidat', 'nom_candidat', 'prenom_candidat',
-        'voix_candidat', 'pct_voix_ins_candidat', 'pct_voix_exp_candidat'
+        'candidate_gender', 'candidate_lastname', 'candidate_firstname',
+        'candidate_votes', 'candidate_pct_votes_registered', 'candidate_pct_votes_valid'
     ]
     # Find the index of the first candidate field
     first_candidate_idx = df.columns.get_loc(candidate_fields[0])
@@ -79,21 +80,106 @@ def clean_and_rename_columns(df):
     df.columns = new_columns
     return df
 
-def main():
-    # Connect to Postgres
-    # engine = get_postgres_engine()
-
-    df = fileToDF(
-        loadFile("elections-2022-depts-t1.xlsx"),
-        "xlsx"
-    )
+def loadElectionsData():
+    df = pd.read_excel(BytesIO(loadFile("elections-2022-depts-t1.xlsx")))
+    df = remove_accents_df(df)
     df = clean_and_rename_columns(df)
-    print(df.columns)
-    print("Number of rows:", df.shape[0])
-    print("First 5 rows:")
-    print(df.head())
+    debugDF(df)
+
+    # Save DataFrame to Postgres
+    print("Dumping DataFrame to Postgres...")
+    df.to_sql(
+        'elections_2022_departments',
+        con=engine,
+        if_exists='replace',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
+    print("DataFrame successfully dumped to Postgres.")
+
+def debugDF(df):
+    print(f"Columns and types: {[f'{col}: {dtype}' for col, dtype in zip(df.columns, df.dtypes)]}")
+    print(f"Number of rows: {df.shape[0]}")
+    print("First 20 rows:")
+    print(df.head(20))
     print("Done printing head")
 
+def onlyKeepTotal(df):
+    # Only keep rows where sexe is 'T'
+    df_filtered = df[df['sexe'] == 'T'].copy()
+    # Drop the 'sexe' column
+    df_filtered = df_filtered.drop(columns=['sexe'])
+    return df_filtered
+
+def prepare_df22(df22, year, df0921):
+    # Extract mapping from libgeo to codgeo from df0921
+    mapping = df0921[['libgeo', 'codgeo']].drop_duplicates().set_index('libgeo')['codgeo']
+    # Rename columns to match df0921
+    df22 = df22.rename(columns={
+        'Département': 'libgeo',
+        'Taux de chômage': 'tx_chom1564'
+    })
+    # Add year column
+    df22['an'] = year
+    # Map codgeo using libgeo
+    df22['codgeo'] = df22['libgeo'].map(mapping)
+    # Reorder columns to match df0921
+    df22 = df22[['codgeo', 'libgeo', 'an', 'tx_chom1564']]
+    # Convert tx_chom1564 to float, coercing errors (e.g., 'nd' to NaN)
+    df22['tx_chom1564'] = pd.to_numeric(df22['tx_chom1564'], errors='coerce')
+    return df22
+
+def loadChomageData():
+    df0921 = pd.read_excel(BytesIO(loadFile("chomage_2009-2021.xlsx")), skiprows=4)
+    df0921 = remove_accents_df(df0921)
+    debugDF(df0921)
+
+    df_filtered = onlyKeepTotal(df0921)
+    debugDF(df_filtered)
+
+    # For 2022: load rows 3 to 104 (Excel is 1-based, pandas is 0-based, so skiprows=2, nrows=102)
+    df22 = pd.read_excel(
+        BytesIO(loadFile("chomage_2022.xlsx")),
+        sheet_name="Figure 2b",
+        skiprows=2,
+        nrows=102
+    )
+    df22 = remove_accents_df(df22)
+    debugDF(df22)
+
+    # Prepare df22 to match df0921 format, using mapping from df0921
+    df22_prepared = prepare_df22(df22, 2022, df_filtered)
+    debugDF(df22_prepared)
+
+    # Merge the two DataFrames
+    merged = pd.concat([df_filtered, df22_prepared], ignore_index=True)
+
+    merged = merged.rename(columns={
+        'codgeo': 'department_code',
+        'libgeo': 'department_name',
+        'an': 'year',
+        'tx_chom1564': 'unemployment_rate'
+    })
+
+    merged = merged.sort_values(by=['department_code', 'year']).reset_index(drop=True)
+    debugDF(merged)
+
+    # Save DataFrame to Postgres
+    print("Dumping DataFrame to Postgres...")
+    merged.to_sql(
+        'unemployment_rates',
+        con=engine,
+        if_exists='replace',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
+    print("DataFrame successfully dumped to Postgres.")
+
+def main():
+    loadElectionsData()
+    loadChomageData()
 
 if __name__ == "__main__":
     main()

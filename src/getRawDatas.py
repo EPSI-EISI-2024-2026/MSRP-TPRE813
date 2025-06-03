@@ -12,6 +12,8 @@ BUCKET_NAME = os.environ["MINIO_BUCKET"]
 # List of files to download: (url, filename)
 FILES = [
     ("https://www.data.gouv.fr/fr/datasets/r/18847484-f622-4ccc-baa9-e6b12f749514", "elections-2022-depts-t1.xlsx"),
+    ("https://www.observatoire-des-territoires.gouv.fr/outils/cartographie-interactive/api/v1/functions/GC_API_download.php?type=stat&nivgeo=dep&dataset=indic_sex_rp&indic=tx_chom1564", "chomage_2009-2021.xlsx"),
+    ("https://www.insee.fr/fr/statistiques/fichier/7456887/ECRT2023-F12.xlsx", "chomage_2022.xlsx"),
 ]
 
 def main():
