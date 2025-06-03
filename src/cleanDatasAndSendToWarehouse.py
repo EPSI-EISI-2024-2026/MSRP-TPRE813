@@ -16,16 +16,7 @@ client = get_minio_client()
 # Connect to Postgres
 engine = get_postgres_engine()
 
-def loadFile(filename):
-    """
-    Load a file from MinIO bucket.
-    """
-    try:
-        data = client.get_object(BUCKET_NAME, filename)
-        return data.read()
-    except Exception as e:
-        print(f"Error loading file {filename}: {e}")
-        return None
+# Utility functions
 
 def remove_accents_df(df):
     def strip_accents(s):
@@ -33,6 +24,15 @@ def remove_accents_df(df):
             return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
         return s
     return df.applymap(strip_accents)
+
+def debugDF(df):
+    print(f"Columns and types: {[f'{col}: {dtype}' for col, dtype in zip(df.columns, df.dtypes)]}")
+    print(f"Number of rows: {df.shape[0]}")
+    print("First 20 rows:")
+    print(df.head(20))
+    print("Done printing head")
+
+# Data cleaning helpers
 
 def clean_and_rename_columns(df):
     # Drop the Etat saisie column
@@ -80,6 +80,46 @@ def clean_and_rename_columns(df):
     df.columns = new_columns
     return df
 
+def onlyKeepTotal(df):
+    # Only keep rows where sexe is 'T'
+    df_filtered = df[df['sexe'] == 'T'].copy()
+    # Drop the 'sexe' column
+    df_filtered = df_filtered.drop(columns=['sexe'])
+    return df_filtered
+
+def prepare_df22(df22, df0921):
+    # Extract mapping from libgeo to codgeo from df0921
+    mapping = df0921[['libgeo', 'codgeo']].drop_duplicates().set_index('libgeo')['codgeo']
+    # Rename columns to match df0921
+    df22 = df22.rename(columns={
+        'Département': 'libgeo',
+        'Taux de chômage': 'tx_chom1564'
+    })
+    # Add year column
+    df22['an'] = 2022
+    # Map codgeo using libgeo
+    df22['codgeo'] = df22['libgeo'].map(mapping)
+    # Reorder columns to match df0921
+    df22 = df22[['codgeo', 'libgeo', 'an', 'tx_chom1564']]
+    # Convert tx_chom1564 to float, coercing errors (e.g., 'nd' to NaN)
+    df22['tx_chom1564'] = pd.to_numeric(df22['tx_chom1564'], errors='coerce')
+    return df22
+
+# MinIO file loader
+
+def loadFile(filename):
+    """
+    Load a file from MinIO bucket.
+    """
+    try:
+        data = client.get_object(BUCKET_NAME, filename)
+        return data.read()
+    except Exception as e:
+        print(f"Error loading file {filename}: {e}")
+        return None
+
+# ETL functions
+
 def loadElectionsData():
     df = pd.read_excel(BytesIO(loadFile("elections-2022-depts-t1.xlsx")))
     df = remove_accents_df(df)
@@ -97,38 +137,6 @@ def loadElectionsData():
         chunksize=1000
     )
     print("DataFrame successfully dumped to Postgres.")
-
-def debugDF(df):
-    print(f"Columns and types: {[f'{col}: {dtype}' for col, dtype in zip(df.columns, df.dtypes)]}")
-    print(f"Number of rows: {df.shape[0]}")
-    print("First 20 rows:")
-    print(df.head(20))
-    print("Done printing head")
-
-def onlyKeepTotal(df):
-    # Only keep rows where sexe is 'T'
-    df_filtered = df[df['sexe'] == 'T'].copy()
-    # Drop the 'sexe' column
-    df_filtered = df_filtered.drop(columns=['sexe'])
-    return df_filtered
-
-def prepare_df22(df22, year, df0921):
-    # Extract mapping from libgeo to codgeo from df0921
-    mapping = df0921[['libgeo', 'codgeo']].drop_duplicates().set_index('libgeo')['codgeo']
-    # Rename columns to match df0921
-    df22 = df22.rename(columns={
-        'Département': 'libgeo',
-        'Taux de chômage': 'tx_chom1564'
-    })
-    # Add year column
-    df22['an'] = year
-    # Map codgeo using libgeo
-    df22['codgeo'] = df22['libgeo'].map(mapping)
-    # Reorder columns to match df0921
-    df22 = df22[['codgeo', 'libgeo', 'an', 'tx_chom1564']]
-    # Convert tx_chom1564 to float, coercing errors (e.g., 'nd' to NaN)
-    df22['tx_chom1564'] = pd.to_numeric(df22['tx_chom1564'], errors='coerce')
-    return df22
 
 def loadChomageData():
     df0921 = pd.read_excel(BytesIO(loadFile("chomage_2009-2021.xlsx")), skiprows=4)
@@ -149,7 +157,7 @@ def loadChomageData():
     debugDF(df22)
 
     # Prepare df22 to match df0921 format, using mapping from df0921
-    df22_prepared = prepare_df22(df22, 2022, df_filtered)
+    df22_prepared = prepare_df22(df22, df_filtered)
     debugDF(df22_prepared)
 
     # Merge the two DataFrames
@@ -176,6 +184,8 @@ def loadChomageData():
         chunksize=1000
     )
     print("DataFrame successfully dumped to Postgres.")
+
+# Main entrypoint
 
 def main():
     loadElectionsData()
