@@ -1,0 +1,5 @@
+minio
+pandas
+sqlalchemy
+psycopg2-binary
+openpyxl
