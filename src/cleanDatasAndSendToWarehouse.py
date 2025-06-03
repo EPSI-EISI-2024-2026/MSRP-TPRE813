@@ -58,30 +58,25 @@ def clean_and_rename_columns(df):
     }
     df = df.rename(columns=rename_map)
 
-    # Candidate fields to rename
     candidate_fields = [
         'Sexe', 'Nom', 'Prénom', 'Voix', '% Voix/Ins', '% Voix/Exp'
     ]
-    # Find the index of the first candidate field
-    first_candidate_idx = df.columns.get_loc(candidate_fields[0])
-    # Rename the first set of candidate columns
-    for j, field in enumerate(candidate_fields):
-        col_idx = first_candidate_idx + j
-        if col_idx < len(df.columns):
-            df.columns.values[col_idx] = f"{field.lower().replace('% ', 'pct_').replace('/', '_').replace(' ', '_')}_candidat_1"
-    # Prepare normalized field names for repeated candidates
     normalized_fields = [
         'sexe_candidat', 'nom_candidat', 'prenom_candidat',
         'voix_candidat', 'pct_voix_ins_candidat', 'pct_voix_exp_candidat'
     ]
-    # Rename the repeated candidate columns
-    candidate_num = 2
-    for i in range(first_candidate_idx + len(candidate_fields), len(df.columns), len(candidate_fields)):
+    # Find the index of the first candidate field
+    first_candidate_idx = df.columns.get_loc(candidate_fields[0])
+    # Build new columns list
+    new_columns = list(df.columns)
+    candidate_num = 1
+    for i in range(first_candidate_idx, len(df.columns), len(candidate_fields)):
         for j, field in enumerate(normalized_fields):
             col_idx = i + j
-            if col_idx < len(df.columns):
-                df.columns.values[col_idx] = f"{field}_{candidate_num}"
+            if col_idx < len(new_columns):
+                new_columns[col_idx] = f"{field}_{candidate_num}"
         candidate_num += 1
+    df.columns = new_columns
     return df
 
 def main():
@@ -94,9 +89,11 @@ def main():
     )
     df = clean_and_rename_columns(df)
     print(df.columns)
-    print("\nDataFrame extract:")
-    print(df)
-    
+    print("Number of rows:", df.shape[0])
+    print("First 5 rows:")
+    print(df.head())
+    print("Done printing head")
+
 
 if __name__ == "__main__":
     main()
