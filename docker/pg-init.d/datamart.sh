@@ -77,7 +77,7 @@ psql -v ON_ERROR_STOP=1 --username "$DB_USER" --dbname "$DB_NAME" <<-EOSQL
         code_insee VARCHAR(50),
         nom_commune VARCHAR(50),
         population VARCHAR(50),
-        code_postal VARCHAR(50),
+        code_postal TEXT[],
         id_departement INTEGER NOT NULL,
         PRIMARY KEY(id_commune),
         FOREIGN KEY(id_departement) REFERENCES Departement(id_departement)

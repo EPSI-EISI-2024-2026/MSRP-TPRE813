@@ -65,6 +65,16 @@ def addGeoDatas():
         if 'typeLiaison' in df.columns:
             df.drop(columns=['typeLiaison'], inplace=True)
 
+    # Ensure codes are strings and strip whitespace
+    regionsDf['code'] = regionsDf['code'].astype(str).str.strip()
+    departementsDf['region'] = departementsDf['region'].astype(str).str.strip()
+
+    # Clear tables before loading to avoid duplicates and FK issues
+    with datamart.begin() as conn:
+        conn.execute(sqlalchemy.text('DELETE FROM commune'))
+        conn.execute(sqlalchemy.text('DELETE FROM departement'))
+        conn.execute(sqlalchemy.text('DELETE FROM region'))
+
     # For each region, fetch the name of the chefLieu from communesDf and sum population
     chef_lieu_names = []
     region_populations = []
@@ -101,11 +111,65 @@ def addGeoDatas():
     departementsDf['population'] = dep_populations
     debugDF(departementsDf)
 
-    # TODO load the regions in db or update if exists and keep the ids later
+    # Load the regions in db or update if exists and keep the ids later
+    regionsDf_db = regionsDf.rename(columns={
+        'nom': 'nom_region',
+        'code': 'code_region',
+        'chefLieu_nom': 'chef_lieu',
+        'population': 'population'
+    })[['nom_region', 'code_region', 'chef_lieu', 'population']]
+    regionsDf_db.to_sql(
+        'region',
+        con=datamart,
+        if_exists='append',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
+    # Fetch region ids for mapping (reload after insert)
+    region_id_map = pd.read_sql('SELECT id_region, code_region FROM region', datamart).set_index('code_region')['id_region'].to_dict()
 
-    # TODO load the departements in db or update if exists and keep the ids later use the regions ids from ealier for proper relation
+    # Load the departements in db or update if exists and keep the ids later use the regions ids from earlier for proper relation
+    departementsDf_db = departementsDf.rename(columns={
+        'nom': 'nom_departement',
+        'code': 'code_departement',
+        'chefLieu_nom': 'chef_lieu',
+        'population': 'population',
+        'region': 'code_region'
+    })[['nom_departement', 'code_departement', 'chef_lieu', 'population', 'code_region']]
+    departementsDf_db['id_region'] = departementsDf_db['code_region'].map(region_id_map)
+    departementsDf_db = departementsDf_db.drop(columns=['code_region'])
+    departementsDf_db.to_sql(
+        'departement',
+        con=datamart,
+        if_exists='append',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
+    # Fetch departement ids for mapping
+    dep_id_map = pd.read_sql('SELECT id_departement, code_departement FROM departement', datamart).set_index('code_departement')['id_departement'].to_dict()
 
-    # TODO load communes in db or update if exists and keep the ids later use the departements ids from ealier for proper relation
+    # Load communes in db or update if exists and keep the ids later use the departements ids from earlier for proper relation
+    communesDf_db = communesDf.rename(columns={
+        'code': 'code_insee',
+        'nom': 'nom_commune',
+        'population': 'population',
+        'departement': 'code_departement',
+    })[['code_insee', 'nom_commune', 'population', 'codesPostaux', 'code_departement']]
+    # Assign the full array of postal codes
+    communesDf_db['code_postal'] = communesDf_db['codesPostaux']
+    communesDf_db['id_departement'] = communesDf_db['code_departement'].map(dep_id_map)
+    communesDf_db = communesDf_db.drop(columns=['codesPostaux', 'code_departement'])
+    communesDf_db.to_sql(
+        'commune',
+        con=datamart,
+        if_exists='append',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
+    print("Regions, departements, and communes loaded into datamart.")
 
 def extract_unique_candidates(electionDf):
     # Find all candidate columns by suffix
