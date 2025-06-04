@@ -1,10 +1,11 @@
 from clients.minio import get_minio_client
-from clients.postgres import get_postgres_engine
+from clients.postgres import get_warehouse_engine
 import os
 from dotenv import load_dotenv
 import pandas as pd
 from io import BytesIO
 import unicodedata
+from utils import debugDF, loadFile
 
 # Load environment variables from .env file
 load_dotenv()
@@ -14,7 +15,7 @@ BUCKET_NAME = os.environ["MINIO_BUCKET"]
 # Connect to MinIO
 client = get_minio_client()
 # Connect to Postgres
-engine = get_postgres_engine()
+engine = get_warehouse_engine()
 
 # Utility functions
 
@@ -24,13 +25,6 @@ def remove_accents_df(df):
             return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
         return s
     return df.applymap(strip_accents)
-
-def debugDF(df):
-    print(f"Columns and types: {[f'{col}: {dtype}' for col, dtype in zip(df.columns, df.dtypes)]}")
-    print(f"Number of rows: {df.shape[0]}")
-    print("First 20 rows:")
-    print(df.head(20))
-    print("Done printing head")
 
 # Data cleaning helpers
 
@@ -105,23 +99,10 @@ def prepare_df22(df22, df0921):
     df22['tx_chom1564'] = pd.to_numeric(df22['tx_chom1564'], errors='coerce')
     return df22
 
-# MinIO file loader
-
-def loadFile(filename):
-    """
-    Load a file from MinIO bucket.
-    """
-    try:
-        data = client.get_object(BUCKET_NAME, filename)
-        return data.read()
-    except Exception as e:
-        print(f"Error loading file {filename}: {e}")
-        return None
-
 # ETL functions
 
 def loadElectionsData():
-    df = pd.read_excel(BytesIO(loadFile("elections-2022-depts-t1.xlsx")))
+    df = pd.read_excel(BytesIO(loadFile(client, BUCKET_NAME, "elections-2022-depts-t1.xlsx")))
     df = remove_accents_df(df)
     df = clean_and_rename_columns(df)
     debugDF(df)
@@ -139,7 +120,7 @@ def loadElectionsData():
     print("DataFrame successfully dumped to Postgres.")
 
 def loadChomageData():
-    df0921 = pd.read_excel(BytesIO(loadFile("chomage_2009-2021.xlsx")), skiprows=4)
+    df0921 = pd.read_excel(BytesIO(loadFile(client, BUCKET_NAME, "chomage_2009-2021.xlsx")), skiprows=4)
     df0921 = remove_accents_df(df0921)
     debugDF(df0921)
 
