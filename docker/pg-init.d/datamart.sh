@@ -82,4 +82,78 @@ psql -v ON_ERROR_STOP=1 --username "$DB_USER" --dbname "$DB_NAME" <<-EOSQL
         PRIMARY KEY(id_commune),
         FOREIGN KEY(id_departement) REFERENCES Departement(id_departement)
     );
+
+    CREATE TABLE IF NOT EXISTS Shared_Votes(
+        id_shared_vote SERIAL PRIMARY KEY,
+        id_election INTEGER NOT NULL,
+        id_departement INTEGER NOT NULL,
+        blanks_count INTEGER NOT NULL,
+        blanks_prct FLOAT NOT NULL,
+        nulls_count INTEGER NOT NULL,
+        nulls_prct FLOAT NOT NULL,
+        FOREIGN KEY(id_election) REFERENCES Election(id_election),
+        FOREIGN KEY(id_departement) REFERENCES Departement(id_departement)
+    );
+
+    CREATE TABLE IF NOT EXISTS Votes(
+        id_vote SERIAL PRIMARY KEY,
+        id_election INTEGER NOT NULL,
+        id_candidat INTEGER NOT NULL,
+        id_departement INTEGER NOT NULL,
+        votes_count INTEGER NOT NULL,
+        valid_votes_prct FLOAT NOT NULL,
+        registered_votes_prct FLOAT NOT NULL,
+        FOREIGN KEY(id_election) REFERENCES Election(id_election),
+        FOREIGN KEY(id_candidat) REFERENCES Candidats(id_candidat),
+        FOREIGN KEY(id_departement) REFERENCES Departement(id_departement)
+    );
+
+    create table if not exists Chomage(
+        id SERIAL PRIMARY KEY,
+        id_departement INTEGER NOT NULL,
+        year VARCHAR(5) not null,
+        taux FLOAT not null,
+        FOREIGN KEY(id_departement) REFERENCES Departement(id_departement)
+    );
+
+    CREATE TABLE IF NOT EXISTS Crime_Type(
+        id SERIAL PRIMARY KEY,
+        label VARCHAR(100) NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS Crime_Unit(
+        id SERIAL PRIMARY KEY,
+        label VARCHAR(100) NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS Crimes(
+        id SERIAL PRIMARY KEY,
+        id_departement INTEGER NOT NULL,
+        id_type INTEGER NOT NULL,
+        id_unit INTEGER NOT NULL,
+        year VARCHAR(5) NOT NULL,
+        count INTEGER NOT NULL,
+        taux_pour_mille FLOAT NOT NULL,
+        population INTEGER NOT NULL,
+        FOREIGN KEY(id_departement) REFERENCES Departement(id_departement),
+        FOREIGN KEY(id_type) REFERENCES Crime_Type(id),
+        FOREIGN KEY(id_unit) REFERENCES Crime_Unit(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS Immigration(
+        id SERIAL PRIMARY KEY,
+        id_departement INTEGER NOT NULL,
+        year VARCHAR(5) NOT NULL,
+        taux FLOAT NOT NULL,
+        FOREIGN KEY(id_departement) REFERENCES Departement(id_departement)
+    );
+
+    CREATE TABLE IF NOT EXISTS Income(
+        id SERIAL PRIMARY KEY,
+        id_departement INTEGER NOT NULL,
+        household_count INTEGER NOT NULL,
+        prct_taxed FLOAT NOT NULL,
+        median_income INTEGER NOT NULL,
+        FOREIGN KEY(id_departement) REFERENCES Departement(id_departement)
+    );
 EOSQL

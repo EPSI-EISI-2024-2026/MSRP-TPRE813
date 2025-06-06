@@ -129,7 +129,7 @@ def loadChomageData():
 
     # For 2022: load rows 3 to 104 (Excel is 1-based, pandas is 0-based, so skiprows=2, nrows=102)
     df22 = pd.read_excel(
-        BytesIO(loadFile("chomage_2022.xlsx")),
+        BytesIO(loadFile(client, BUCKET_NAME, "chomage_2022.xlsx")),
         sheet_name="Figure 2b",
         skiprows=2,
         nrows=102
@@ -166,11 +166,51 @@ def loadChomageData():
     )
     print("DataFrame successfully dumped to Postgres.")
 
-# Main entrypoint
+def loadCrimeDatas():
+    df = pd.read_csv(BytesIO(loadFile(client, BUCKET_NAME, "crime-datas.csv")), delimiter=';')
+    df = df.drop(columns=['insee_pop_millesime', 'insee_log_millesime'])
+    debugDF(df)
+    df.to_sql(
+        'crime_data',
+        con=engine,
+        if_exists='replace',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
+
+def loadImmigrationDatas():
+    df = pd.read_excel(BytesIO(loadFile(client, BUCKET_NAME, "insee_rp_hist_xxxx.xlsx")), sheet_name="Data", skiprows=4)
+    debugDF(df)
+    df.to_sql(
+        'immigration_data',
+        con=engine,
+        if_exists='replace',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
+
+def loadIncomeDatas():
+    df = pd.read_excel(BytesIO(loadFile(client, BUCKET_NAME, "TCRD_022.xlsx")), sheet_name="DEP", skiprows=4, skipfooter=2).drop(columns=['1er décile (D1)', '9e décile (D9)']).rename(columns={'Unnamed: 0': 'code_dep', 'Unnamed: 1': 'lib_dep', 'Part des ménages fiscaux imposés (en %)': 'prct_taxed', 'Médiane': 'median'})
+    # Remove the line where code_dep is 'M'
+    df = df[df['code_dep'] != 'M']
+    debugDF(df)
+    df.to_sql(
+        'income_data',
+        con=engine,
+        if_exists='replace',
+        index=False,
+        method='multi',
+        chunksize=1000
+    )
 
 def main():
     loadElectionsData()
     loadChomageData()
+    loadCrimeDatas()
+    loadImmigrationDatas()
+    loadIncomeDatas()
 
 if __name__ == "__main__":
     main()
