@@ -111,7 +111,7 @@ def addGeoDatas():
         'code': 'code_region',
         'chefLieu_nom': 'chef_lieu',
         'population': 'population'
-    })[['nom_region', 'code_region', 'chef_lieu', 'population']]
+    })[['nom_region', 'code_region', 'chef_lieu', 'population', 'zone']]
     regionsDf_db.to_sql(
         'region',
         con=datamart,
@@ -130,7 +130,7 @@ def addGeoDatas():
         'chefLieu_nom': 'chef_lieu',
         'population': 'population',
         'region': 'code_region'
-    })[['nom_departement', 'code_departement', 'chef_lieu', 'population', 'code_region']]
+    })[['nom_departement', 'code_departement', 'chef_lieu', 'population', 'code_region', 'zone']]
     departementsDf_db['id_region'] = departementsDf_db['code_region'].map(region_id_map)
     departementsDf_db = departementsDf_db.drop(columns=['code_region'])
     departementsDf_db.to_sql(
@@ -150,7 +150,7 @@ def addGeoDatas():
         'nom': 'nom_commune',
         'population': 'population',
         'departement': 'code_departement',
-    })[['code_insee', 'nom_commune', 'population', 'codesPostaux', 'code_departement']]
+    })[['code_insee', 'nom_commune', 'population', 'codesPostaux', 'code_departement', 'zone']]
     # Assign the full array of postal codes
     communesDf_db['code_postal'] = communesDf_db['codesPostaux']
     communesDf_db['id_departement'] = communesDf_db['code_departement'].map(dep_id_map)

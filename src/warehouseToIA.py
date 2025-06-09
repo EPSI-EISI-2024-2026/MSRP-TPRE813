@@ -1,16 +1,18 @@
+import os
 import pandas as pd
 from clients.postgres import get_warehouse_engine, get_iamart_engine
 from clients.minio import get_minio_client
 import re
 import io
 
-from utils import debugDF
+from utils import debugDF, loadFile
 
 warehouse = get_warehouse_engine()
 iamart = get_iamart_engine()
 minio = get_minio_client()
 
-BUCKET_NAME = 'datamart'
+DATAMART_BUCKET_NAME = 'datamart'
+BUCKET_NAME = os.environ["MINIO_BUCKET"]
 
 def main():
     electionDf = pd.read_sql_table('elections_2022_departments', warehouse)
@@ -112,6 +114,19 @@ def main():
     IAdf = IAdf.merge(crime_pivot, left_on='department_code', right_on='departement_code', how='left')
     IAdf = IAdf.drop(columns=['departement_code'])
     del crimeDf, crime_pivot, crime_pivot_nombre  # Free resources
+
+    departementsDf = pd.read_json(io.BytesIO(loadFile(minio, BUCKET_NAME, 'geo/departements.json'))).rename(columns={'code': 'department_code'})
+
+    IAdf = IAdf.merge(
+        departementsDf[['department_code', 'zone']],
+        right_on='department_code',
+        left_on='department_code',
+        how='left',
+        suffixes=('', '_geo')
+    )
+
+    IAdf = IAdf[(IAdf['zone'] == 'metro')]
+
     debugDF(IAdf)
 
     # Prepare the final DataFrame for IA-mart
@@ -129,7 +144,7 @@ def main():
     IAdf.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
     csv_buffer.seek(0)
     minio.put_object(
-        BUCKET_NAME,
+        DATAMART_BUCKET_NAME,
         'IA-mart.csv',
         csv_buffer,
         length=csv_buffer.getbuffer().nbytes,
