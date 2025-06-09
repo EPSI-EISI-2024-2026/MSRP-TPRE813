@@ -12,3 +12,7 @@ def get_warehouse_engine():
 def get_datamart_engine():
     uri = os.environ["DATAMART_URI"]
     return create_engine(uri)
+
+def get_iamart_engine():
+    uri = os.environ["IAMART_URI"]
+    return create_engine(uri)

@@ -181,6 +181,7 @@ def loadCrimeDatas():
 
 def loadImmigrationDatas():
     df = pd.read_excel(BytesIO(loadFile(client, BUCKET_NAME, "insee_rp_hist_xxxx.xlsx")), sheet_name="Data", skiprows=4)
+    df = remove_accents_df(df)
     debugDF(df)
     df.to_sql(
         'immigration_data',
@@ -195,6 +196,7 @@ def loadIncomeDatas():
     df = pd.read_excel(BytesIO(loadFile(client, BUCKET_NAME, "TCRD_022.xlsx")), sheet_name="DEP", skiprows=4, skipfooter=2).drop(columns=['1er décile (D1)', '9e décile (D9)']).rename(columns={'Unnamed: 0': 'code_dep', 'Unnamed: 1': 'lib_dep', 'Part des ménages fiscaux imposés (en %)': 'prct_taxed', 'Médiane': 'median'})
     # Remove the line where code_dep is 'M'
     df = df[df['code_dep'] != 'M']
+    df = remove_accents_df(df)
     debugDF(df)
     df.to_sql(
         'income_data',
